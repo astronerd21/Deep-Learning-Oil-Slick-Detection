@@ -79,23 +79,36 @@ def train() -> None:
     dataset = SARDataset(root=args.data_dir)
     print(f"Dataset size: {len(dataset)} samples | class counts: {dataset.class_counts}")
 
-    val_size = max(1, int(len(dataset) * args.val_split))
+    val_size = int(len(dataset) * args.val_split)
     train_size = len(dataset) - val_size
-    train_ds, val_ds = random_split(dataset, [train_size, val_size])
 
-    train_loader = DataLoader(
-        train_ds,
-        batch_size=args.batch_size,
-        shuffle=True,
-        num_workers=args.num_workers,
-        pin_memory=device.type == "cuda",
-    )
-    val_loader = DataLoader(
-        val_ds,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        pin_memory=device.type == "cuda",
-    )
+    if val_size == 0:
+        # No validation; train on the full dataset.
+        train_ds = dataset
+        val_ds = None
+        train_loader = DataLoader(
+            train_ds,
+            batch_size=args.batch_size,
+            shuffle=True,
+            num_workers=args.num_workers,
+            pin_memory=device.type == "cuda",
+        )
+        val_loader = None
+    else:
+        train_ds, val_ds = random_split(dataset, [train_size, val_size])
+        train_loader = DataLoader(
+            train_ds,
+            batch_size=args.batch_size,
+            shuffle=True,
+            num_workers=args.num_workers,
+            pin_memory=device.type == "cuda",
+        )
+        val_loader = DataLoader(
+            val_ds,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            pin_memory=device.type == "cuda",
+        )
 
     # ------------------------------------------------------------------
     # Model, optimiser, loss
@@ -127,31 +140,37 @@ def train() -> None:
         train_loss /= train_size
 
         # --- Validate ---
-        model.eval()
-        val_loss = 0.0
-        correct = 0
-        with torch.no_grad():
-            for images, labels in val_loader:
-                images = images.to(device)
-                labels = labels.float().to(device)
-                logits = model(images)
-                val_loss += criterion(logits, labels).item() * len(images)
-                preds = (logits.sigmoid() >= 0.5).long()
-                correct += (preds == labels.long()).sum().item()
-        val_loss /= val_size
-        val_acc = correct / val_size
+        if val_loader is not None:
+            model.eval()
+            val_loss = 0.0
+            correct = 0
+            with torch.no_grad():
+                for images, labels in val_loader:
+                    images = images.to(device)
+                    labels = labels.float().to(device)
+                    logits = model(images)
+                    val_loss += criterion(logits, labels).item() * len(images)
+                    preds = (logits.sigmoid() >= 0.5).long()
+                    correct += (preds == labels.long()).sum().item()
+            val_loss /= val_size
+            val_acc = correct / val_size
 
-        print(
-            f"Epoch {epoch:3d}/{args.epochs} | "
-            f"train_loss={train_loss:.4f} | "
-            f"val_loss={val_loss:.4f} | "
-            f"val_acc={val_acc:.4f}"
-        )
+            print(
+                f"Epoch {epoch:3d}/{args.epochs} | "
+                f"train_loss={train_loss:.4f} | "
+                f"val_loss={val_loss:.4f} | "
+                f"val_acc={val_acc:.4f}"
+            )
 
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            torch.save(model.state_dict(), output_path)
-            print(f"  → Saved best model to '{output_path}'")
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                torch.save(model.state_dict(), output_path)
+                print(f"  → Saved best model to '{output_path}'")
+        else:
+            print(
+                f"Epoch {epoch:3d}/{args.epochs} | "
+                f"train_loss={train_loss:.4f}"
+            )
 
 
 if __name__ == "__main__":

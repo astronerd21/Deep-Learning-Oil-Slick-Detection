@@ -1,7 +1,7 @@
 """Custom dataset for 2-band SAR GeoTIFF images (VV/VH polarisations)."""
 
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import rasterio
@@ -101,9 +101,9 @@ class SARDataset(Dataset):
     # ------------------------------------------------------------------
 
     @property
-    def class_counts(self) -> dict:
+    def class_counts(self) -> Dict[int, int]:
         """Return the number of samples per class label."""
-        counts: dict = {label: 0 for label in self.CLASSES.values()}
+        counts: Dict[int, int] = {label: 0 for label in self.CLASSES.values()}
         for _, label in self.samples:
             counts[label] += 1
         return counts
