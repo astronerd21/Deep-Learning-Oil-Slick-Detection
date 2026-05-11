@@ -2,6 +2,7 @@ import os
 import torch
 import rasterio
 import pandas as pd
+import numpy as np
 from torch.utils.data import Dataset
 
 
@@ -58,7 +59,7 @@ class SARDataset(Dataset):
             vh = src.read(2) # Band 2
             
         # Convert to PyTorch Tensor (Shape: Channels, Height, Width)
-        image = torch.tensor([vv, vh], dtype=torch.float32)
+        image = torch.tensor(np.stack([vv, vh]), dtype=torch.float32)
         
         # Z-Score Normalization per channel
         for c in range(image.shape[0]):
