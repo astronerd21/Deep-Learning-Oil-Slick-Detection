@@ -1,70 +1,84 @@
-"""Script to clean SAR image chips by filtering out high NoData content."""
+"""Script to clean existing SAR image splits by filtering out high NoData content."""
 
 import argparse
 from pathlib import Path
 import rasterio
 import numpy as np
 
-
 def check_nodata_ratio(filepath: Path, threshold: float = 0.5) -> bool:
-    """Returns True if the VV band contains more 0.0 pixels than the threshold."""
+    """Opens the VV channel (band 1) and calculates the percentage of 0.0 pixels."""
+    if not filepath.is_file():
+        return True # Falls eine Datei fehlt, wird sie ausgeschlossen
+        
     with rasterio.open(filepath) as src:
+        # 1. Öffne den VV-Kanal (Band 1)
         vv_band = src.read(1)
+        
+    # 2. Berechne den Prozentsatz der Pixel mit dem Wert exakt 0.0
     nodata_pixels = np.sum(vv_band == 0.0)
     total_pixels = vv_band.size
-    return (nodata_pixels / total_pixels) > threshold
+    nodata_ratio = nodata_pixels / total_pixels
+    
+    # 3. Schwellenwert prüfen (> 50%)
+    return nodata_ratio > threshold
+
+def clean_single_split_file(original_split_path: Path, output_split_path: Path, data_dir: Path):
+    """Iterates over images listed in the current split file and filters them."""
+    if not original_split_path.is_file():
+        print(f"Warnung: Originale Split-Datei nicht gefunden unter {original_split_path}")
+        return
+
+    valid_image_ids = []
+    removed_count = 0
+
+    # Iteriere über alle Bilder im aktuellen Split
+    with open(original_split_path, "r") as f:
+        image_ids = [line.strip() for line in f if line.strip()]
+
+    for img_id in image_ids:
+        # Pfad zur Bilddatei zusammenbauen
+        img_path = data_dir / img_id
+        
+        # Wenn NoData > 50%, wird es ausgeschlossen, ansonsten behalten
+        if not check_nodata_ratio(img_path, threshold=0.5):
+            valid_image_ids.append(img_id)
+        else:
+            removed_count += 1
+            print(f"  -> Ausgeschlossen (NoData > 50%): {img_id}")
+
+    # Deliverables: Generiere die neue, bereinigte Split-Datei
+    output_split_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_split_path, "w") as f:
+        for img_id in sorted(valid_image_ids):
+            f.write(f"{img_id}\n")
+
+    print(f"Datei '{output_split_path.name}' generiert:")
+    print(f"  - Gültige Bilder übrig: {len(valid_image_ids)}")
+    print(f"  - Entfernte Artefakte: {removed_count}\n")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Filter out SAR chips with high NoData edge artifacts.")
-    parser.add_argument("--data-dir", required=True, help="Root-Pfad zum Datensatz-Ordner.")
-    parser.add_argument("--val-split", type=float, default=0.2, help="Anteil der Daten für Validierung.")
+    parser = argparse.ArgumentParser(description="Clean current splits based on VV NoData threshold.")
+    parser.add_argument("--data-dir", required=True, help="Pfad zum Ordner mit den entpackten .tif Bildern.")
+    parser.add_argument("--splits-in-dir", required=True, help="Pfad zum Ordner mit den originalen train.txt und val.txt.")
     args = parser.parse_args()
 
-    root_path = Path(args.data_dir)
+    data_path = Path(args.data_dir)
+    source_splits_dir = Path(args.splits_in_dir)
     
-    # Stratifiziertes Sammeln anhand eurer Namenskonvention
-    all_valid_by_class = {0: [], 1: []}
-    
-    # Direkt alle TIFs im flachen Ordner durchgehen
-    for filepath in sorted(root_path.glob("*.tif")):
-        sample_id = filepath.name
-        
-        # Eure Logik zur Bestimmung des Labels
-        if sample_id.startswith('pos') or sample_id.startswith('ext_pos'):
-            label = 1
-        elif sample_id.startswith('neg') or sample_id.startswith('ext_neg'):
-            label = 0
-        else:
-            continue  # Überspringe unbekannte Formate
-            
-        # NoData-Check
-        if not check_nodata_ratio(filepath, threshold=0.5):
-            all_valid_by_class[label].append(sample_id)
-        else:
-            print(f"Entfernt (NoData > 50%): {sample_id}")
+    # Zielordner für die neuen Deliverables (train_clean.txt und val_clean.txt)
+    output_splits_dir = Path("splits")
 
-    # Aufteilen in Train und Val
-    train_clean = []
-    val_clean = []
-    
-    for label, samples in all_valid_by_class.items():
-        rng = np.random.default_rng(42)  # Fester Seed
-        rng.shuffle(samples)
-        
-        val_size = int(len(samples) * args.val_split)
-        val_clean.extend(samples[:val_size])
-        train_clean.extend(samples[val_size:])
+    print("=== Starte Bereinigung des TRAINING-Splits ===")
+    clean_single_split_file(
+        original_split_path=source_splits_dir / "train.txt", 
+        output_split_path=output_splits_dir / "train_clean.txt", 
+        data_dir=data_path
+    )
 
-    splits_dir = Path("splits")
-    splits_dir.mkdir(exist_ok=True)
-    
-    with open(splits_dir / "train_clean.txt", "w") as f:
-        for s in sorted(train_clean): f.write(f"{s}\n")
-        
-    with open(splits_dir / "val_clean.txt", "w") as f:
-        for s in sorted(val_clean): f.write(f"{s}\n")
-
-    print(f"\nErgebnis:")
-    print(f"  -> splits/train_clean.txt erstellt ({len(train_clean)} Samples)")
-    print(f"  -> splits/val_clean.txt erstellt ({len(val_clean)} Samples)")
+    print("=== Starte Bereinigung des VALIDATION-Splits ===")
+    clean_single_split_file(
+        original_split_path=source_splits_dir / "val.txt", 
+        output_split_path=output_splits_dir / "val_clean.txt", 
+        data_dir=data_path
+    )

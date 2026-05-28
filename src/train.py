@@ -74,7 +74,7 @@ def train() -> None:
     # Dataset & splits handling
     # ------------------------------------------------------------------
     if args.train_split and args.val_split_file:
-        print(f"Lade bereinigte Splits aus Textdateien...")
+        print("Lade bereinigte Splits aus Textdateien...")
         train_ds = SARDataset(root=args.data_dir, split_file=args.train_split)
         val_ds = SARDataset(root=args.data_dir, split_file=args.val_split_file)
         
