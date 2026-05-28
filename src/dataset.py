@@ -1,8 +1,7 @@
-"""Custom dataset for 2-band SAR GeoTIFF images (VV/VH polarisations)."""
+"""Custom dataset for 2-band SAR GeoTIFF images using filename labels."""
 
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
-
 import numpy as np
 import rasterio
 import torch
@@ -10,13 +9,7 @@ from torch.utils.data import Dataset
 
 
 class SARDataset(Dataset):
-    """PyTorch Dataset for binary-labelled 2-band SAR GeoTIFF images.
-
-    Unterstützt das Laden des gesamten Ordners oder das Filtern über eine vordefinierte Split-Datei.
-    """
-
-    #: Mapping from sub-directory name to integer class label.
-    CLASSES = {"no_oil_slick": 0, "oil_slick": 1}
+    """PyTorch Dataset for binary-labelled 2-band SAR GeoTIFF images using filename-based labels."""
 
     def __init__(
         self,
@@ -30,49 +23,45 @@ class SARDataset(Dataset):
         self.samples: List[Tuple[Path, int]] = self._collect_samples()
 
         if not self.samples:
-            raise FileNotFoundError(
-                f"No GeoTIFF files found under '{self.root}' with the given configuration."
-            )
+            raise FileNotFoundError(f"Keine passenden GeoTIFF-Dateien unter '{self.root}' gefunden.")
+
+    def _get_label_from_filename(self, filename: str) -> Optional[int]:
+        """Eure Logik zur Label-Bestimmung."""
+        if filename.startswith('pos') or filename.startswith('ext_pos'):
+            return 1
+        elif filename.startswith('neg') or filename.startswith('ext_neg'):
+            return 0
+        return None
 
     def _collect_samples(self) -> List[Tuple[Path, int]]:
         samples: List[Tuple[Path, int]] = []
         
-        # Fall 1: Nutzen der bereinigten Split-Textdatei
+        # Fall 1: Aus der bereinigten Textdatei lesen
         if self.split_file:
             if not self.split_file.is_file():
                 raise FileNotFoundError(f"Split-Datei nicht gefunden: {self.split_file}")
-                
             with open(self.split_file, "r") as f:
-                lines = [line.strip() for line in f if line.strip()]
-                
-            for rel_path in lines:
-                filepath = self.root / rel_path
-                # Bestimme das Label anhand des Verzeichnisnamens im relativen Pfad
-                class_name = Path(rel_path).parts[0]
-                if class_name in self.CLASSES:
-                    samples.append((filepath, self.CLASSES[class_name]))
+                filenames = [line.strip() for line in f if line.strip()]
+            for fname in filenames:
+                filepath = self.root / fname
+                label = self._get_label_from_filename(fname)
+                if label is not None:
+                    samples.append((filepath, label))
             return samples
 
-        # Fall 2: Fallback (originaler Modus) scannt das komplette Verzeichnis
-        for class_name, label in self.CLASSES.items():
-            class_dir = self.root / class_name
-            if not class_dir.is_dir():
-                continue
-            for ext in ("*.tif", "*.tiff"):
-                for filepath in sorted(class_dir.glob(ext)):
-                    samples.append((filepath, label))
+        # Fall 2: Fallback (alles im Ordner einlesen)
+        for filepath in sorted(self.root.glob("*.tif")):
+            label = self._get_label_from_filename(filepath.name)
+            if label is not None:
+                samples.append((filepath, label))
         return samples
 
     @staticmethod
     def _load_geotiff(filepath: Path) -> torch.Tensor:
-        """Read a 2-band GeoTIFF and return a ``(2, H, W)`` float32 tensor."""
         with rasterio.open(filepath) as src:
             if src.count != 2:
-                raise ValueError(
-                    f"Expected 2 bands (VV, VH) in '{filepath}', "
-                    f"got {src.count}."
-                )
-            data = src.read().astype(np.float32)  # (2, H, W)
+                raise ValueError(f"Expected 2 bands (VV, VH) in '{filepath}', got {src.count}.")
+            data = src.read().astype(np.float32)
         return torch.from_numpy(data)
 
     def __len__(self) -> int:
@@ -87,8 +76,7 @@ class SARDataset(Dataset):
 
     @property
     def class_counts(self) -> Dict[int, int]:
-        """Return the number of samples per class label."""
-        counts: Dict[int, int] = {label: 0 for label in self.CLASSES.values()}
+        counts = {0: 0, 1: 0}
         for _, label in self.samples:
             counts[label] += 1
         return counts
