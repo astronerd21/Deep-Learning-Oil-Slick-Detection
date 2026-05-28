@@ -36,18 +36,27 @@ class SARDataset(Dataset):
     def _collect_samples(self) -> List[Tuple[Path, int]]:
         samples: List[Tuple[Path, int]] = []
         
-        # Fall 1: Aus der bereinigten Textdatei lesen
-        if self.split_file:
-            if not self.split_file.is_file():
-                raise FileNotFoundError(f"Split-Datei nicht gefunden: {self.split_file}")
-            with open(self.split_file, "r") as f:
-                filenames = [line.strip() for line in f if line.strip()]
-            for fname in filenames:
-                filepath = self.root / fname
-                label = self._get_label_from_filename(fname)
-                if label is not None:
-                    samples.append((filepath, label))
-            return samples
+        if not self.split_file.is_file():
+            raise FileNotFoundError(f"Bereinigte Split-Datei nicht gefunden: {self.split_file}")
+            
+        with open(self.split_file, "r") as f:
+            filenames = [line.strip() for line in f if line.strip()]
+            
+        for fname in filenames:
+            # HIER DIE KORREKTUR: Wenn der Eintrag aus dem Split nicht auf '_s1.tif' endet,
+            # bauen wir den korrekten Dateinamen für die Festplatte zusammen.
+            if not fname.endswith('_s1.tif'):
+                clean_fname = fname.replace('.tif', '')
+                real_file = f"{clean_fname}_s1.tif"
+            else:
+                real_file = fname
+                
+            filepath = self.root / real_file
+            label = self._get_label_from_filename(fname)
+            if label is not None:
+                samples.append((filepath, label))
+                
+        return samples
 
         # Fall 2: Fallback (alles im Ordner einlesen)
         for filepath in sorted(self.root.glob("*.tif")):
