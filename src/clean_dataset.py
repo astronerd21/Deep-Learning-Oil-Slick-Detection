@@ -44,7 +44,7 @@ def clean_single_split_file(original_split_path: Path, output_split_path: Path, 
             valid_image_ids.append(img_id)
         else:
             removed_count += 1
-            print(f"  -> Ausgeschlossen (NoData > 50%): {img_id}")
+           # print(f"  -> Ausgeschlossen (NoData > 50%): {img_id}")
 
     # Deliverables: Generiere die neue, bereinigte Split-Datei
     output_split_path.parent.mkdir(parents=True, exist_ok=True)
