@@ -62,7 +62,7 @@ if __name__ == "__main__":
 
     data_path = Path(args.data_dir)
     source_splits_dir = Path(args.splits_in_dir)
-    output_splits_dir = Path("splits")
+    output_splits_dir = Path("/content/cleaned_splits")
 
     print(f"{'Split Name':<13} | {'Status':<68}")
     print("-" * 85)
