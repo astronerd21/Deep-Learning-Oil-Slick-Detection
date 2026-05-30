@@ -1,4 +1,4 @@
-"""Custom dataset for 2-band SAR GeoTIFF images using filename labels."""
+"""Custom dataset for 2-band SAR GeoTIFF images using existing clean splits."""
 
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
@@ -9,24 +9,25 @@ from torch.utils.data import Dataset
 
 
 class SARDataset(Dataset):
-    """PyTorch Dataset for binary-labelled 2-band SAR GeoTIFF images using filename-based labels."""
+    """PyTorch Dataset that loads valid SAR image chips from a clean split file."""
 
     def __init__(
         self,
         root: str,
+        split_file: str,
+        metadata: Optional[str] = None,
         transform: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
-        split_file: Optional[str] = None,
     ) -> None:
         self.root = Path(root)
+        self.split_file = Path(split_file)
         self.transform = transform
-        self.split_file = Path(split_file) if split_file else None
         self.samples: List[Tuple[Path, int]] = self._collect_samples()
 
         if not self.samples:
-            raise FileNotFoundError(f"Keine passenden GeoTIFF-Dateien unter '{self.root}' gefunden.")
+            raise FileNotFoundError(f"No valid GeoTIFF files loaded from split file '{self.split_file}'.")
 
     def _get_label_from_filename(self, filename: str) -> Optional[int]:
-        """Eure Logik zur Label-Bestimmung."""
+        """Derive binary label from the filename prefix."""
         if filename.startswith('pos') or filename.startswith('ext_pos'):
             return 1
         elif filename.startswith('neg') or filename.startswith('ext_neg'):
@@ -37,14 +38,12 @@ class SARDataset(Dataset):
         samples: List[Tuple[Path, int]] = []
         
         if not self.split_file.is_file():
-            raise FileNotFoundError(f"Bereinigte Split-Datei nicht gefunden: {self.split_file}")
+            raise FileNotFoundError(f"Cleaned split file not found: {self.split_file}")
             
         with open(self.split_file, "r") as f:
             filenames = [line.strip() for line in f if line.strip()]
             
         for fname in filenames:
-            # HIER DIE KORREKTUR: Wenn der Eintrag aus dem Split nicht auf '_s1.tif' endet,
-            # bauen wir den korrekten Dateinamen für die Festplatte zusammen.
             if not fname.endswith('_s1.tif'):
                 clean_fname = fname.replace('.tif', '')
                 real_file = f"{clean_fname}_s1.tif"
@@ -58,19 +57,21 @@ class SARDataset(Dataset):
                 
         return samples
 
-        # Fall 2: Fallback (alles im Ordner einlesen)
-        for filepath in sorted(self.root.glob("*.tif")):
-            label = self._get_label_from_filename(filepath.name)
-            if label is not None:
-                samples.append((filepath, label))
-        return samples
-
     @staticmethod
     def _load_geotiff(filepath: Path) -> torch.Tensor:
+        """Loads a 2-band GeoTIFF and applies channel-wise Z-score normalization."""
         with rasterio.open(filepath) as src:
             if src.count != 2:
                 raise ValueError(f"Expected 2 bands (VV, VH) in '{filepath}', got {src.count}.")
-            data = src.read().astype(np.float32)
+            data = src.read().astype(np.float32)  # Shape: (2, H, W)
+        
+        # Apply Z-score normalization per channel (band) to stabilize radar values
+        for c in range(data.shape[0]):
+            channel_mean = np.mean(data[c])
+            channel_std = np.std(data[c])
+            if channel_std > 0:
+                data[c] = (data[c] - channel_mean) / channel_std
+                
         return torch.from_numpy(data)
 
     def __len__(self) -> int:

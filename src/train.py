@@ -6,6 +6,7 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, random_split
+import torchvision.transforms as T
 
 from src.dataset import SARDataset
 from src.model import SARResNet
@@ -18,18 +19,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--data-dir",
         required=True,
-        help="Root directory containing 'oil_slick/' and 'no_oil_slick/'",
+        help="Root directory containing SAR image files.",
     )
-    # Neue Argumente für die bereinigten Splits
     parser.add_argument(
         "--train-split",
         default=None,
-        help="Pfad zur train_clean.txt Datei (schaltet automatischen Split ab).",
+        help="Path to the train_clean.txt file.",
     )
     parser.add_argument(
         "--val-split-file",
         default=None,
-        help="Pfad zur val_clean.txt Datei.",
+        help="Path to the val_clean.txt file.",
     )
     parser.add_argument(
         "--backbone",
@@ -44,7 +44,7 @@ def parse_args() -> argparse.Namespace:
         "--val-split",
         type=float,
         default=0.2,
-        help="Fraction of data reserved for validation (nur genutzt wenn keine Split-Dateien angegeben).",
+        help="Fraction of data reserved for validation (only used if no split files are provided).",
     )
     parser.add_argument(
         "--no-pretrained",
@@ -70,16 +70,21 @@ def train() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
+    # Image resizing transformation pipeline to save memory and compute resources
+    transform = T.Compose([
+        T.Resize((224, 224), antialias=True),
+    ])
+
     # ------------------------------------------------------------------
     # Dataset & splits handling
     # ------------------------------------------------------------------
     if args.train_split and args.val_split_file:
-        print("Lade bereinigte Splits aus Textdateien...")
-        train_ds = SARDataset(root=args.data_dir, split_file=args.train_split)
-        val_ds = SARDataset(root=args.data_dir, split_file=args.val_split_file)
+        print("Loading cleaned splits from text files...")
+        train_ds = SARDataset(root=args.data_dir, split_file=args.train_split, transform=transform)
+        val_ds = SARDataset(root=args.data_dir, split_file=args.val_split_file, transform=transform)
         
-        print(f"Train-Dataset: {len(train_ds)} Samples | Klassenverteilung: {train_ds.class_counts}")
-        print(f"Val-Dataset: {len(val_ds)} Samples | Klassenverteilung: {val_ds.class_counts}")
+        print(f"Train-Dataset: {len(train_ds)} samples | Class distribution: {train_ds.class_counts}")
+        print(f"Val-Dataset: {len(val_ds)} samples | Class distribution: {val_ds.class_counts}")
         
         train_loader = DataLoader(
             train_ds, batch_size=args.batch_size, shuffle=True,
@@ -92,9 +97,8 @@ def train() -> None:
         train_size = len(train_ds)
         val_size = len(val_ds)
     else:
-        # Fallback auf den alten dynamischen Random-Split
-        print("Keine Split-Dateien übergeben. Führe automatischen Random-Split aus.")
-        dataset = SARDataset(root=args.data_dir)
+        print("No split files provided. Running automatic random split fallback.")
+        dataset = SARDataset(root=args.data_dir, split_file=None)
         val_size = int(len(dataset) * args.val_split)
         train_size = len(dataset) - val_size
         
