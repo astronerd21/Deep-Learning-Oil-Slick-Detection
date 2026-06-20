@@ -38,7 +38,7 @@ def parse_args() -> argparse.Namespace:
         help="ResNet backbone variant (default: resnet18).",
     )
     parser.add_argument("--epochs", type=int, default=20, help="Training epochs.")
-    parser.add_argument("--batch-size", type=int, default=16, help="Mini-batch size.")
+    parser.add_argument("--batch-size", type=int, default=64, help="Mini-batch size.")
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate.")
     parser.add_argument(
         "--val-split",
@@ -71,28 +71,44 @@ def train() -> None:
     print(f"Using device: {device}")
 
     # Image resizing transformation pipeline to save memory and compute resources
-    transform = T.Compose([
-        T.Resize((224, 224), antialias=True),
-    ])
+    transform = T.Compose(
+        [
+            T.Resize((224, 224), antialias=True),
+        ]
+    )
 
     # ------------------------------------------------------------------
     # Dataset & splits handling
     # ------------------------------------------------------------------
     if args.train_split and args.val_split_file:
         print("Loading cleaned splits from text files...")
-        train_ds = SARDataset(root=args.data_dir, split_file=args.train_split, transform=transform)
-        val_ds = SARDataset(root=args.data_dir, split_file=args.val_split_file, transform=transform)
-        
-        print(f"Train-Dataset: {len(train_ds)} samples | Class distribution: {train_ds.class_counts}")
-        print(f"Val-Dataset: {len(val_ds)} samples | Class distribution: {val_ds.class_counts}")
-        
+        train_ds = SARDataset(
+            root=args.data_dir, split_file=args.train_split, transform=transform
+        )
+        val_ds = SARDataset(
+            root=args.data_dir, split_file=args.val_split_file, transform=transform
+        )
+
+        print(
+            f"Train-Dataset: {len(train_ds)} samples | Class distribution: {train_ds.class_counts}"
+        )
+        print(
+            f"Val-Dataset: {len(val_ds)} samples | Class distribution: {val_ds.class_counts}"
+        )
+
         train_loader = DataLoader(
-            train_ds, batch_size=args.batch_size, shuffle=True,
-            num_workers=args.num_workers, pin_memory=device.type == "cuda"
+            train_ds,
+            batch_size=args.batch_size,
+            shuffle=True,
+            num_workers=args.num_workers,
+            pin_memory=device.type == "cuda",
         )
         val_loader = DataLoader(
-            val_ds, batch_size=args.batch_size, shuffle=False,
-            num_workers=args.num_workers, pin_memory=device.type == "cuda"
+            val_ds,
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=args.num_workers,
+            pin_memory=device.type == "cuda",
         )
         train_size = len(train_ds)
         val_size = len(val_ds)
@@ -101,26 +117,34 @@ def train() -> None:
         dataset = SARDataset(root=args.data_dir, split_file=None)
         val_size = int(len(dataset) * args.val_split)
         train_size = len(dataset) - val_size
-        
+
         if val_size == 0:
             train_ds = dataset
             val_loader = None
         else:
             train_ds, val_ds = random_split(dataset, [train_size, val_size])
             val_loader = DataLoader(
-                val_ds, batch_size=args.batch_size, shuffle=False,
-                num_workers=args.num_workers, pin_memory=device.type == "cuda"
+                val_ds,
+                batch_size=args.batch_size,
+                shuffle=False,
+                num_workers=args.num_workers,
+                pin_memory=device.type == "cuda",
             )
-            
+
         train_loader = DataLoader(
-            train_ds, batch_size=args.batch_size, shuffle=True,
-            num_workers=args.num_workers, pin_memory=device.type == "cuda"
+            train_ds,
+            batch_size=args.batch_size,
+            shuffle=True,
+            num_workers=args.num_workers,
+            pin_memory=device.type == "cuda",
         )
 
     # ------------------------------------------------------------------
     # Model, optimiser, loss
     # ------------------------------------------------------------------
-    model = SARResNet(backbone=args.backbone, pretrained=not args.no_pretrained).to(device)
+    model = SARResNet(backbone=args.backbone, pretrained=not args.no_pretrained).to(
+        device
+    )
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     criterion = nn.BCEWithLogitsLoss()
 
