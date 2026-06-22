@@ -153,7 +153,21 @@ def train() -> None:
     # ------------------------------------------------------------------
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    
     best_val_loss = float("inf")
+    
+    # Check if a checkpoint exists to load historical best_val_loss
+    if output_path.exists():
+        print(f"Found existing checkpoint at '{output_path}'. Checking for historical best validation loss...")
+        try:
+            checkpoint = torch.load(output_path, map_location=device, weights_only=False)
+            if isinstance(checkpoint, dict) and "best_val_loss" in checkpoint:
+                best_val_loss = checkpoint["best_val_loss"]
+                print(f"  → Resuming with historical best_val_loss: {best_val_loss:.4f}")
+            else:
+                print("  → Checkpoint is in old format (missing 'best_val_loss' key). Starting tracker from infinity.")
+        except Exception as e:
+            print(f"  → Warning: Could not load existing checkpoint to check loss: {e}")
 
     for epoch in range(1, args.epochs + 1):
         # --- Train ---
@@ -195,8 +209,14 @@ def train() -> None:
 
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
-                torch.save(model.state_dict(), output_path)
-                print(f"  → Saved best model to '{output_path}'")
+                
+                # Save both the model weights and the metric in a dictionary
+                checkpoint = {
+                    "model_state_dict": model.state_dict(),
+                    "best_val_loss": best_val_loss
+                }
+                torch.save(checkpoint, output_path)
+                print(f"  → Saved new best model to '{output_path}'")
         else:
             print(f"Epoch {epoch:3d}/{args.epochs} | train_loss={train_loss:.4f}")
 
