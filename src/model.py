@@ -5,6 +5,7 @@ from typing import Optional
 import torch
 import torch.nn as nn
 from torchvision.models import ResNet18_Weights, ResNet50_Weights, resnet18, resnet50
+from terratorch.registry import TERRATORCH_BACKBONE_REGISTRY
 
 
 class SARResNet(nn.Module):
@@ -55,9 +56,6 @@ class SARResNet(nn.Module):
         factory, weights = self._BACKBONES[backbone]
         net = factory(weights=weights if pretrained else None)
 
-        # ------------------------------------------------------------------
-        # Adapt first conv: 3 → in_channels
-        # ------------------------------------------------------------------
         orig_conv: nn.Conv2d = net.conv1
         new_conv = nn.Conv2d(
             in_channels,
@@ -68,8 +66,7 @@ class SARResNet(nn.Module):
             bias=orig_conv.bias is not None,
         )
         if pretrained:
-            # Initialise by averaging the 3-channel ImageNet weights across
-            # the channel dimension and repeating for each new channel.
+
             with torch.no_grad():
                 mean_weight = orig_conv.weight.mean(dim=1, keepdim=True)
                 new_conv.weight.copy_(mean_weight.expand(-1, in_channels, -1, -1))
@@ -77,9 +74,6 @@ class SARResNet(nn.Module):
                     new_conv.bias.copy_(orig_conv.bias)
         net.conv1 = new_conv
 
-        # ------------------------------------------------------------------
-        # Adapt final FC: → 1 (binary logit)
-        # ------------------------------------------------------------------
         in_features: int = net.fc.in_features
         net.fc = nn.Linear(in_features, 1)
 
@@ -98,3 +92,44 @@ class SARResNet(nn.Module):
             :class:`torch.nn.BCEWithLogitsLoss`.
         """
         return self.net(x).squeeze(1)
+
+
+class TerraMindClassifier(nn.Module):
+    """Binary classifier built on the TerraMind-1.0-base Foundation Model."""
+
+    def __init__(self, freeze_backbone=True):
+        super().__init__()
+
+        self.backbone = TERRATORCH_BACKBONE_REGISTRY["terramind_v1_base"]()
+
+        if freeze_backbone:
+            print(
+                "INFO: TerraMind Backbone is frozen. Training Classification Head only."
+            )
+            for param in self.backbone.parameters():
+                param.requires_grad = False
+
+        hidden_dim = 768
+
+        self.pool = nn.AdaptiveAvgPool2d((1, 1))
+
+        self.head = nn.Sequential(
+            nn.Linear(hidden_dim, 128),
+            nn.BatchNorm1d(128),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(128, 1),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        features = self.backbone(x)
+
+        if isinstance(features, (list, tuple)):
+            features = features[-1]
+
+        if len(features.shape) > 2:
+            features = self.pool(features)
+            features = torch.flatten(features, 1)
+
+        logits = self.head(features)
+        return logits.squeeze(-1)

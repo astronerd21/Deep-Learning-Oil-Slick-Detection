@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader, random_split
 import torchvision.transforms as T
 
 from src.dataset import SARDataset
-from src.model import SARResNet
+from src.model import SARResNet, TerraMindClassifier
 
 
 def parse_args() -> argparse.Namespace:
@@ -34,7 +34,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--backbone",
         default="resnet18",
-        choices=["resnet18", "resnet50"],
+        choices=["resnet18", "resnet50", "terramind"],
         help="ResNet backbone variant (default: resnet18).",
     )
     parser.add_argument("--epochs", type=int, default=20, help="Training epochs.")
@@ -70,16 +70,12 @@ def train() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # Image resizing transformation pipeline to save memory and compute resources
     transform = T.Compose(
         [
             T.Resize((224, 224), antialias=True),
         ]
     )
 
-    # ------------------------------------------------------------------
-    # Dataset & splits handling
-    # ------------------------------------------------------------------
     if args.train_split and args.val_split_file:
         print("Loading cleaned splits from text files...")
         train_ds = SARDataset(
@@ -139,38 +135,46 @@ def train() -> None:
             pin_memory=device.type == "cuda",
         )
 
-    # ------------------------------------------------------------------
-    # Model, optimiser, loss
-    # ------------------------------------------------------------------
-    model = SARResNet(backbone=args.backbone, pretrained=not args.no_pretrained).to(
-        device
-    )
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    if args.backbone in ["resnet18", "resnet50"]:
+        model = SARResNet(backbone=args.backbone, pretrained=not args.no_pretrained).to(
+            device
+        )
+    elif args.backbone == "terramind":
+        model = TerraMindClassifier(freeze_backbone=True).to(device)
+    else:
+        raise ValueError(f"Unknown backbone {args.backbone}")
+
+    trainable_params = [p for p in model.parameters() if p.requires_grad]
+    optimizer = torch.optim.Adam(trainable_params, lr=args.lr)
+
     criterion = nn.BCEWithLogitsLoss()
 
-    # ------------------------------------------------------------------
-    # Training loop
-    # ------------------------------------------------------------------
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     best_val_loss = float("inf")
-    
-    # Check if a checkpoint exists to load historical best_val_loss
+
     if output_path.exists():
-        print(f"Found existing checkpoint at '{output_path}'. Checking for historical best validation loss...")
+        print(
+            f"Found existing checkpoint at '{output_path}'. Checking for historical best validation loss..."
+        )
         try:
-            checkpoint = torch.load(output_path, map_location=device, weights_only=False)
+            checkpoint = torch.load(
+                output_path, map_location=device, weights_only=False
+            )
             if isinstance(checkpoint, dict) and "best_val_loss" in checkpoint:
                 best_val_loss = checkpoint["best_val_loss"]
-                print(f"  → Resuming with historical best_val_loss: {best_val_loss:.4f}")
+                print(
+                    f"  → Resuming with historical best_val_loss: {best_val_loss:.4f}"
+                )
             else:
-                print("  → Checkpoint is in old format (missing 'best_val_loss' key). Starting tracker from infinity.")
+                print(
+                    "  → Checkpoint is in old format (missing 'best_val_loss' key). Starting tracker from infinity."
+                )
         except Exception as e:
             print(f"  → Warning: Could not load existing checkpoint to check loss: {e}")
 
     for epoch in range(1, args.epochs + 1):
-        # --- Train ---
         model.train()
         train_loss = 0.0
         for images, labels in train_loader:
@@ -184,7 +188,6 @@ def train() -> None:
             train_loss += loss.item() * len(images)
         train_loss /= train_size
 
-        # --- Validate ---
         if val_loader is not None:
             model.eval()
             val_loss = 0.0
@@ -209,11 +212,10 @@ def train() -> None:
 
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
-                
-                # Save both the model weights and the metric in a dictionary
+
                 checkpoint = {
                     "model_state_dict": model.state_dict(),
-                    "best_val_loss": best_val_loss
+                    "best_val_loss": best_val_loss,
                 }
                 torch.save(checkpoint, output_path)
                 print(f"  → Saved new best model to '{output_path}'")
