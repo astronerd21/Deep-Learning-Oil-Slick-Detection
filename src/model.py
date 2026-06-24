@@ -111,8 +111,6 @@ class TerraMindClassifier(nn.Module):
 
         hidden_dim = 768
 
-        self.pool = nn.AdaptiveAvgPool2d((1, 1))
-
         self.head = nn.Sequential(
             nn.Linear(hidden_dim, 128),
             nn.BatchNorm1d(128),
@@ -122,14 +120,29 @@ class TerraMindClassifier(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        features = self.backbone(x)
+        B, C, H, W = x.shape
+        zeros = torch.zeros((B, 1, H, W), device=x.device, dtype=x.dtype)
+        x_padded = torch.cat([x, zeros], dim=1)
+
+        features = self.backbone(x_padded)
 
         if isinstance(features, (list, tuple)):
-            features = features[-1]
+            feat = features[-1]
+        elif isinstance(features, dict):
+            first_key = list(features.keys())[0]
+            feat = features[first_key]
+        else:
+            feat = features
 
-        if len(features.shape) > 2:
-            features = self.pool(features)
-            features = torch.flatten(features, 1)
+        if len(feat.shape) == 4:
 
-        logits = self.head(features)
+            feat = feat.mean(dim=[2, 3])
+        elif len(feat.shape) == 3:
+
+            if feat.shape[2] == 768:
+                feat = feat.mean(dim=1)
+            elif feat.shape[1] == 768:
+                feat = feat.mean(dim=2)
+
+        logits = self.head(feat)
         return logits.squeeze(-1)
