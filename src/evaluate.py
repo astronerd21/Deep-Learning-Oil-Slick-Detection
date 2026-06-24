@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 import torchvision.transforms as T
 
 from src.dataset import SARDataset
-from src.model import SARResNet
+from src.model import SARResNet, TerraMindClassifier
 
 
 def parse_args() -> argparse.Namespace:
@@ -35,7 +35,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--backbone",
         default="resnet18",
-        choices=["resnet18", "resnet50"],
+        choices=["resnet18", "resnet50", "terramind"],
         help="ResNet backbone variant (default: resnet18).",
     )
     parser.add_argument(
@@ -79,7 +79,12 @@ def main() -> None:
         pin_memory=device.type == "cuda",
     )
 
-    model = SARResNet(backbone=args.backbone, pretrained=False).to(device)
+    if args.backbone in ["resnet18", "resnet50"]:
+        model = SARResNet(backbone=args.backbone, pretrained=False).to(device)
+    elif args.backbone == "terramind":
+        model = TerraMindClassifier(freeze_backbone=True).to(device)
+    else:
+        raise ValueError(f"Unknown backbone {args.backbone}")
 
     print(f"Loading checkpoint '{args.model}'...")
     checkpoint = torch.load(args.model, map_location=device, weights_only=False)
