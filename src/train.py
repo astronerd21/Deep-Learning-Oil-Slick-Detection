@@ -70,19 +70,27 @@ def train() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    transform = T.Compose(
+    train_transform = T.Compose(
         [
             T.Resize((224, 224), antialias=True),
+            T.RandomHorizontalFlip(p=0.5),
+            T.RandomVerticalFlip(p=0.5),            
         ]
     )
 
+    val_transform = T.Compose(
+        [          
+            T.Resize((224, 224), antialias=True),
+        ]
+    )
+    
     if args.train_split and args.val_split_file:
         print("Loading cleaned splits from text files...")
         train_ds = SARDataset(
-            root=args.data_dir, split_file=args.train_split, transform=transform
+            root=args.data_dir, split_file=args.train_split, transform=train_transform
         )
         val_ds = SARDataset(
-            root=args.data_dir, split_file=args.val_split_file, transform=transform
+            root=args.data_dir, split_file=args.val_split_file, transform=val_transform
         )
 
         print(
@@ -110,15 +118,24 @@ def train() -> None:
         val_size = len(val_ds)
     else:
         print("No split files provided. Running automatic random split fallback.")
-        dataset = SARDataset(root=args.data_dir, split_file=None)
-        val_size = int(len(dataset) * args.val_split)
-        train_size = len(dataset) - val_size
+        base_dataset = SARDataset(root=args.data_dir, split_file=None, transform=None)
 
+        val_size = int(len(base_dataset) * args.val_split)
+        train_size = len(base_dataset) - val_size
+    
         if val_size == 0:
-            train_ds = dataset
+            train_ds = SARDataset(root=args.data_dir, split_file=None, transform=train_transform)
             val_loader = None
         else:
-            train_ds, val_ds = random_split(dataset, [train_size, val_size])
+            train_indices, val_indices = random_split(base_dataset, [train_size, val_size])
+
+            full_train_ds = SARDataset(root=args.data_dir, split_file=None, transform=train_transform)
+            full_val_ds = SARDataset(root=args.data_dir, split_file=None, transform=val_transform)
+
+            from torch.utils.data import Subset
+            train_ds = Subset(full_train_ds, train_indices.indices)
+            val_ds = Subset(full_val_ds, val_indices.indices)
+
             val_loader = DataLoader(
                 val_ds,
                 batch_size=args.batch_size,
