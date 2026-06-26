@@ -74,16 +74,16 @@ def train() -> None:
         [
             T.Resize((224, 224), antialias=True),
             T.RandomHorizontalFlip(p=0.5),
-            T.RandomVerticalFlip(p=0.5),            
+            T.RandomVerticalFlip(p=0.5),
         ]
     )
 
     val_transform = T.Compose(
-        [          
+        [
             T.Resize((224, 224), antialias=True),
         ]
     )
-    
+
     if args.train_split and args.val_split_file:
         print("Loading cleaned splits from text files...")
         train_ds = SARDataset(
@@ -122,17 +122,26 @@ def train() -> None:
 
         val_size = int(len(base_dataset) * args.val_split)
         train_size = len(base_dataset) - val_size
-    
+
         if val_size == 0:
-            train_ds = SARDataset(root=args.data_dir, split_file=None, transform=train_transform)
+            train_ds = SARDataset(
+                root=args.data_dir, split_file=None, transform=train_transform
+            )
             val_loader = None
         else:
-            train_indices, val_indices = random_split(base_dataset, [train_size, val_size])
+            train_indices, val_indices = random_split(
+                base_dataset, [train_size, val_size]
+            )
 
-            full_train_ds = SARDataset(root=args.data_dir, split_file=None, transform=train_transform)
-            full_val_ds = SARDataset(root=args.data_dir, split_file=None, transform=val_transform)
+            full_train_ds = SARDataset(
+                root=args.data_dir, split_file=None, transform=train_transform
+            )
+            full_val_ds = SARDataset(
+                root=args.data_dir, split_file=None, transform=val_transform
+            )
 
             from torch.utils.data import Subset
+
             train_ds = Subset(full_train_ds, train_indices.indices)
             val_ds = Subset(full_val_ds, val_indices.indices)
 
@@ -176,7 +185,7 @@ def train() -> None:
     if not csv_path.exists():
         with open(csv_path, "w") as f:
             f.write("epoch,train_loss,val_loss,val_acc\n")
-    
+
     if output_path.exists():
         print(
             f"Found existing checkpoint at '{output_path}'. Checking for historical best validation loss..."
@@ -234,8 +243,7 @@ def train() -> None:
             )
 
             with open(csv_path, "a") as f:
-                f.write(f"{epoch},{train_loss:.4f},
-                {val_loss:.4f},{val_acc:.4f}\n")
+                f.write(f"{epoch},{train_loss:.4f},{val_loss:.4f},{val_acc:.4f}\n")
 
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
@@ -246,8 +254,8 @@ def train() -> None:
                 }
                 torch.save(checkpoint, output_path)
                 print(f"  → Saved new best model to '{output_path}'")
-        else:
-            print(f"Epoch {epoch:3d}/{args.epochs} | train_loss={train_loss:.4f}")
+            else:
+                print(f"Epoch {epoch:3d}/{args.epochs} | train_loss={train_loss:.4f}")
 
 
 if __name__ == "__main__":
