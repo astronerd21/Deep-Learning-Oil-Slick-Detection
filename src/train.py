@@ -233,7 +233,7 @@ def train() -> None:
                 f"val_acc={val_acc:.4f}"
             )
 
-             with open(csv_path, "a") as f:
+            with open(csv_path, "a") as f:
                 f.write(f"{epoch},{train_loss:.4f},
                 {val_loss:.4f},{val_acc:.4f}\n")
 
