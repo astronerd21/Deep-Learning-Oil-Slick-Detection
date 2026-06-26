@@ -169,8 +169,14 @@ def train() -> None:
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    csv_path = output_path.parent / "training_log.csv"
+
     best_val_loss = float("inf")
 
+    if not csv_path.exists():
+        with open(csv_path, "w") as f:
+            f.write("epoch,train_loss,val_loss,val_acc\n")
+    
     if output_path.exists():
         print(
             f"Found existing checkpoint at '{output_path}'. Checking for historical best validation loss..."
@@ -226,6 +232,10 @@ def train() -> None:
                 f"val_loss={val_loss:.4f} | "
                 f"val_acc={val_acc:.4f}"
             )
+
+             with open(csv_path, "a") as f:
+                f.write(f"{epoch},{train_loss:.4f},
+                {val_loss:.4f},{val_acc:.4f}\n")
 
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
