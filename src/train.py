@@ -254,6 +254,8 @@ def train() -> None:
                 }
                 torch.save(checkpoint, output_path)
                 print(f"  → Saved new best model to '{output_path}'")
+            else:
+                print(f"Epoch {epoch:3d}/{args.epochs} | train_loss={train_loss:.4f}")
 
 
 if __name__ == "__main__":
