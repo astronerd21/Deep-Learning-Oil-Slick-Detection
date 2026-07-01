@@ -36,13 +36,11 @@ def clean_single_split_file(
         image_ids = [line.strip() for line in f if line.strip()]
 
     for img_id in image_ids:
-        base_name = img_id.split(",")[0]
-
-        if not base_name.endswith("_s1.tif"):
-            clean_id = base_name.replace(".tif", "")
+        if not img_id.endswith("_s1.tif"):
+            clean_id = img_id.replace(".tif", "")
             img_file = f"{clean_id}_s1.tif"
         else:
-            img_file = base_name
+            img_file = img_id
 
         img_path = data_dir / img_file
 
@@ -62,7 +60,7 @@ def clean_single_split_file(
 
     split_name = original_split_path.name.upper()
     print(
-        f" -> {split_name:<10}: {len(valid_image_ids):>4} valid | {removed_count:>3} artifacts removed | {missing_count:>3} not found"
+        f" -> {split_name}: {len(valid_image_ids):>4} valid | {removed_count:>3} artifacts removed | {missing_count:>3} not found"
     )
 
 
@@ -70,40 +68,22 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Clean current splits based on VV NoData threshold."
     )
-    parser.add_argument(
-        "--data-dir", required=True, help="Directory containing the TIFF images."
-    )
-    parser.add_argument(
-        "--splits-in-dir",
-        required=True,
-        help="Directory containing the source split .txt files.",
-    )
-    parser.add_argument(
-        "--out-prefix",
-        default="",
-        help="Optional prefix for the output files (e.g., 'geo_').",
-    )
+    parser.add_argument("--data-dir", required=True)
+    parser.add_argument("--splits-in-dir", required=True)
     args = parser.parse_args()
 
     data_path = Path(args.data_dir)
     source_splits_dir = Path(args.splits_in_dir)
     output_splits_dir = Path("/content/cleaned_splits")
 
-    if not source_splits_dir.is_dir():
-        print(f"Error: Directory {source_splits_dir} does not exist.")
-        exit(1)
-
-    print(f"{'Split Name':<16} | {'Status':<68}")
+    print(f"{'Split Name':<13} | {'Status':<68}")
     print("-" * 85)
-
-    for split_file in sorted(source_splits_dir.glob("*.txt")):
-        output_filename = f"{args.out_prefix}{split_file.stem}_clean.txt"
-        output_file_path = output_splits_dir / output_filename
-
-        clean_single_split_file(
-            original_split_path=split_file,
-            output_split_path=output_file_path,
-            data_dir=data_path,
-        )
-
+    clean_single_split_file(
+        source_splits_dir / "train.txt",
+        output_splits_dir / "train_clean.txt",
+        data_path,
+    )
+    clean_single_split_file(
+        source_splits_dir / "val.txt", output_splits_dir / "val_clean.txt", data_path
+    )
     print("-" * 85)
