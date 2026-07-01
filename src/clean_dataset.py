@@ -7,18 +7,22 @@ import numpy as np
 
 
 def check_nodata_ratio(filepath: Path, threshold: float = 0.5) -> bool:
-    """Calculate the percentage of pixels with exactly 0.0, NaN or artificial NoData (-163.0) in the VV channel."""
+    """Calculate the percentage of pixels with NoData in the VV channel."""
     if not filepath.is_file():
         return None
 
-    with rasterio.open(filepath) as src:
-        vv_band = src.read(1)
+    try:
+        with rasterio.open(filepath) as src:
+            vv_band = src.read(1)
+    except Exception as e:
+        print(f"Warning: Skipping corrupt file {filepath}: {e}")
+        # Mark as 'True' (invalid) so it gets filtered out
+        return True 
 
     nodata_pixels = np.sum((vv_band == 0.0) | (np.isnan(vv_band)) | (vv_band <= -160.0))
     total_pixels = vv_band.size
 
     return (nodata_pixels / total_pixels) > threshold
-
 
 def clean_single_split_file(
     original_split_path: Path, output_split_path: Path, data_dir: Path
